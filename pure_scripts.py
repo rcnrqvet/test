@@ -8,8 +8,7 @@ import random
 import tkinter as tk
 from tkinter import filedialog
 import json
-import subprocess
-import requests
+from datetime import datetime
 
 from pynput import mouse, keyboard
 from PyQt5 import QtWidgets, QtGui, QtCore
@@ -18,12 +17,46 @@ import websockets
 import webview
 import base64
 import tempfile
+import psycopg2  # <-- Added for DB license checking
 
-import winreg
+# ---------------- DB Config for license ----------------
+DB_HOST = "localhost"
+DB_PORT = 5432
+DB_NAME = "your_database"
+DB_USER = "your_user"
+DB_PASS = "your_password"
+
+def check_license_key(key):
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASS
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT key, expires_at FROM licenses WHERE key = %s;", (key,))
+        row = cur.fetchone()
+        if not row:
+            return False, "License key not found."
+        key_value, expires_at = row
+        now = datetime.utcnow()
+        if expires_at is None:
+            return True, "License key valid (lifetime)."
+        elif expires_at > now:
+            return True, f"License key valid, expires at {expires_at}."
+        else:
+            return False, "License key expired."
+    except Exception as e:
+        return False, f"Database error: {e}"
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
 
 # ---------------- Config ----------------
 the_url = "http://localhost:5500/dev.html"  # change if you host files locally
-LICENSE_SERVER_URL = "http://localhost:5000/validate"
 
 # ---------------- File Save Function and COLOR setter ----------------
 def save_text_file(data):
@@ -40,6 +73,8 @@ def save_text_file(data):
         print(f"Message saved to {file_path}")
     else:
         print("Save cancelled")
+
+# (rest of your existing code below unchanged...)
 
 def hex_to_bgr(hex_color):
     hex_color = hex_color.lstrip('#')
@@ -71,25 +106,6 @@ def set_windows_accent_color_hex(hex_color):
         pass
 
     ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x1A, 0, "ImmersiveColorSet", 0x2, 500)
-
-# ---------------- Machine ID ----------------
-def get_machine_id():
-    try:
-        cmd = 'wmic csproduct get uuid'
-        output = subprocess.check_output(cmd, shell=True).decode()
-        return output.split('\n')[1].strip()
-    except Exception:
-        return "unknown"
-
-# ---------------- License Validation ----------------
-def validate_license_key(key):
-    machine_id = get_machine_id()
-    try:
-        response = requests.post(LICENSE_SERVER_URL, json={"key": key, "machine_id": machine_id}, timeout=5)
-        data = response.json()
-        return data['valid'], data.get('msg', '')
-    except Exception as e:
-        return False, f"Validation error: {e}"
 
 # ---------------- PyQt Overlay ----------------
 class TransparentOverlay(QtWidgets.QWidget):
@@ -189,8 +205,6 @@ def run():
     right_held = False
 
     paused = False
-    license_valid = False
-    license_message = ""
     pause_lock = threading.Lock()
     ws_client = None
     ws_lock = threading.Lock()
@@ -199,6 +213,8 @@ def run():
     qt_app = None
     overlay_widget = None
     overlay_thread = None
+
+    license_valid = False  # NEW: track if license is valid
 
     def set_hotkeys(data):
         nonlocal primary_key, secondary_key, pause_key
@@ -211,7 +227,7 @@ def run():
 
     def move_mouse(dx, dy):
         ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
-    
+
     def recoil_loop():
         nonlocal paused, license_valid
         while True:
@@ -281,23 +297,21 @@ def run():
         overlay_thread.start()
 
     async def handler(websocket):
-        nonlocal fire_delay, recoil_x, recoil_y, paused, ws_client
+        nonlocal fire_delay, recoil_x, recoil_y, paused, ws_client, license_valid
         nonlocal opacity, grayscale, size_percent, reticle_path
         nonlocal overlay_widget
-        nonlocal license_valid, license_message
 
         with ws_lock:
             ws_client = websocket
         try:
             async for message in websocket:
-                # Try to parse JSON message for license verification
+                # License verification request (JSON format)
                 try:
                     data = json.loads(message)
                     if data.get("action") == "verify":
                         key = data.get("key", "")
-                        valid, msg = validate_license_key(key)
+                        valid, msg = check_license_key(key)
                         license_valid = valid
-                        license_message = msg
                         await websocket.send(json.dumps({
                             "action": "license_result",
                             "ok": valid,
@@ -305,12 +319,7 @@ def run():
                         }))
                         continue
                 except json.JSONDecodeError:
-                    pass  # not JSON, continue normal handling
-
-                # Block commands if license invalid
-                if not license_valid:
-                    await websocket.send("Error: License invalid or not verified.")
-                    continue
+                    pass
 
                 if message.startswith(">"):
                     try:
@@ -372,7 +381,7 @@ def run():
 # ---------------- Start Everything ----------------
 if __name__ == "__main__":
     start_threads = run()
-    start_threads()
+    start_threads()  # start all background threads and listeners
 
     webview.create_window(
         'Ｐｕｒｅ　Ｓｃｒｉｐｔｓ',
