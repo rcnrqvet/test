@@ -147,6 +147,12 @@ class TransparentOverlay(QtWidgets.QWidget):
         painter.setOpacity(1.0)
         painter.drawPixmap(0, 0, self.image)
 
+# ---------------- Recoil patterns ----------------
+recoil_patterns = {
+    "Operator1": [(0, 2), (1, 3), (0, 1), (-1, 2)],
+    "Operator2": [(0, 1), (2, 2), (1, 1), (-1, 0)]
+}
+
 # ---------------- Main Logic ----------------
 def run():
     fire_delay = 0.01
@@ -176,10 +182,12 @@ def run():
     overlay_widget = None
     overlay_thread = None
 
+    current_pattern = recoil_patterns.get("Operator1", [])
+    recoil_index = 0
+    sensitivity = 1.0
+
     def set_hotkeys(data):
         nonlocal primary_key, secondary_key, pause_key
-        # Example parsing logic for hotkeys - update as needed
-        # Data format should be checked before using these indices
         try:
             pause_key = str(data[4])
             primary_key = data[5]
@@ -189,14 +197,15 @@ def run():
 
     def move_mouse(dx, dy):
         ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
-    
+
     def recoil_loop():
-        nonlocal paused
+        nonlocal recoil_index
         while True:
             with pause_lock:
-                if holding and not paused:
-                    dx = recoil_x if random.random() < 0.5 else 0
-                    move_mouse(dx, recoil_y)
+                if holding and not paused and current_pattern:
+                    dx, dy = current_pattern[recoil_index]
+                    move_mouse(dx * sensitivity, dy * sensitivity)
+                    recoil_index = (recoil_index + 1) % len(current_pattern)
             time.sleep(fire_delay)
 
     def on_click(x, y, button, pressed):
@@ -250,7 +259,6 @@ def run():
             if overlay_widget:
                 overlay_widget.close()
                 overlay_widget = None
-            # Quit existing Qt app loop
             if QtWidgets.QApplication.instance():
                 QtWidgets.QApplication.quit()
             overlay_thread.join()
@@ -263,6 +271,7 @@ def run():
         nonlocal fire_delay, recoil_x, recoil_y, paused, ws_client
         nonlocal opacity, grayscale, size_percent, reticle_path
         nonlocal overlay_widget
+        nonlocal current_pattern, recoil_index, sensitivity
 
         with ws_lock:
             ws_client = websocket
@@ -280,9 +289,9 @@ def run():
                             "ok": success,
                             "msg": msg
                         }))
-                        continue  # skip further processing for this message
+                        continue
                 except json.JSONDecodeError:
-                    pass  # not JSON, continue normal message handling
+                    pass
 
                 if message.startswith(">"):
                     try:
@@ -309,6 +318,19 @@ def run():
 
                 elif message.startswith("#"):
                     set_windows_accent_color_hex(message)
+
+                elif message.startswith("operator:"):
+                    op = message.split(":", 1)[1]
+                    current_pattern = recoil_patterns.get(op, [])
+                    recoil_index = 0
+                    await websocket.send(f"Operator changed to {op}")
+
+                elif message.startswith("sensitivity:"):
+                    try:
+                        sensitivity = float(message.split(":", 1)[1])
+                        await websocket.send(f"Sensitivity set to {sensitivity}")
+                    except ValueError:
+                        await websocket.send("Error: Invalid sensitivity value")
 
                 else:
                     try:
@@ -344,7 +366,7 @@ def run():
 # ---------------- Start Everything ----------------
 if __name__ == "__main__":
     start_threads = run()
-    start_threads()  # start all background threads and listeners
+    start_threads()  # start background threads and listeners
 
     webview.create_window(
         'Ｐｕｒｅ　Ｓｃｒｉｐｔｓ',
