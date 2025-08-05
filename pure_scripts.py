@@ -1,4 +1,6 @@
 import os
+from license import verify_license
+import json
 import sys
 import asyncio
 import threading
@@ -322,3 +324,4 @@ if __name__ == "__main__":
         height=570
     )
     webview.start()
+
