@@ -10,7 +10,7 @@ def verify_license(input_key):
     conn = psycopg2.connect(
         dbname="pure_scripts",
         user="postgres",             # 🔁 CHANGE THIS IF DIFFERENT
-        password="your_password",    # 🔁 CHANGE THIS IF DIFFERENT
+        password="purescriptsR6V4",    # 🔁 CHANGE THIS IF DIFFERENT
         host="localhost",
         port="5432"
     )
