@@ -1,131 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ Dev</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
-    body {
-      margin: 0;
-      background: linear-gradient(135deg, #2e004f, #6a00a3);
-      font-family: 'Orbitron', sans-serif;
-      color: #caa0ff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-    }
-    h1 {
-      font-size: 3rem;
-      text-shadow:
-        0 0 10px #ba55d3,
-        0 0 20px #ba55d3,
-        0 0 30px #a14fc8;
-      margin-bottom: 1rem;
-    }
-    label {
-      font-weight: 700;
-      margin-top: 1rem;
-      display: block;
-      color: #d1b3ff;
-    }
-    input, select {
-      margin-top: 0.5rem;
-      padding: 0.5rem;
-      border-radius: 8px;
-      border: none;
-      width: 100%;
-      max-width: 300px;
-      font-size: 1rem;
-      color: #2e004f;
-      background: #d1b3ff;
-      box-shadow:
-        inset 0 0 5px #a14fc8;
-    }
-    button {
-      margin-top: 2rem;
-      background: linear-gradient(45deg, #a14fc8, #ba55d3);
-      border: none;
-      padding: 1rem 2rem;
-      border-radius: 50px;
-      color: #fff;
-      font-size: 1.2rem;
-      cursor: pointer;
-      box-shadow:
-        0 0 15px #ba55d3,
-        0 0 30px #a14fc8;
-      transition: box-shadow 0.3s ease, transform 0.3s ease;
-    }
-    button:hover {
-      box-shadow:
-        0 0 25px #d175ff,
-        0 0 50px #d175ff,
-        0 0 80px #e2a2ff;
-      transform: scale(1.05);
-    }
-    .container {
-      max-width: 320px;
-      width: 100%;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pure Scripts Dev Panel</title>
+<style>
+  body {
+    margin: 0;
+    background: linear-gradient(135deg, #2e004f, #6a00a3);
+    font-family: 'Orbitron', sans-serif;
+    color: #caa0ff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+  }
+  h1 {
+    font-size: 3rem;
+    margin-bottom: 0.5em;
+    text-shadow:
+      0 0 10px #ba55d3,
+      0 0 20px #ba55d3;
+  }
+  .container {
+    background: rgba(150, 50, 150, 0.3);
+    padding: 2rem;
+    border-radius: 15px;
+    box-shadow: 0 0 20px #ba55d3;
+    width: 90%;
+    max-width: 600px;
+  }
+  label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+  input[type="text"], select {
+    width: 100%;
+    padding: 0.5rem;
+    margin-top: 0.3rem;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    font-size: 1rem;
+    background: #3c006a;
+    color: #e0b3ff;
+  }
+  button {
+    margin-top: 2rem;
+    background: linear-gradient(45deg, #a14fc8, #ba55d3);
+    border: none;
+    border-radius: 50px;
+    padding: 1rem 3rem;
+    font-size: 1.3rem;
+    color: white;
+    cursor: pointer;
+    box-shadow:
+      0 0 15px #ba55d3,
+      0 0 30px #a14fc8;
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+    width: 100%;
+  }
+  button:hover {
+    box-shadow:
+      0 0 25px #d175ff,
+      0 0 50px #d175ff,
+      0 0 80px #e2a2ff;
+    transform: scale(1.05);
+  }
+</style>
 </head>
 <body>
-  <h1>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ Dev Panel</h1>
   <div class="container">
-    <label for="sensitivity">Sensitivity:</label>
-    <input type="number" id="sensitivity" min="0" max="100" step="0.1" value="10" />
+    <h1>Pure Scripts Dev Panel</h1>
+    <form id="devForm">
+      <label for="operatorSelect">Select Operator</label>
+      <select id="operatorSelect" name="operator">
+        <option value="operator1">Operator 1</option>
+        <option value="operator2">Operator 2</option>
+        <option value="operator3">Operator 3</option>
+        <!-- Add your operator options here -->
+      </select>
 
-    <label for="operator">Operator:</label>
-    <select id="operator">
-      <option value="ash">Ash</option>
-      <option value="thermite">Thermite</option>
-      <option value="sledge">Sledge</option>
-      <option value="hibana">Hibana</option>
-    </select>
+      <label for="sensitivity">Custom Sensitivity</label>
+      <input type="text" id="sensitivity" name="sensitivity" placeholder="Enter sensitivity (e.g., 1.5)" />
 
-    <label for="toggleRecoil">Recoil Enabled:</label>
-    <select id="toggleRecoil">
-      <option value="true" selected>Yes</option>
-      <option value="false">No</option>
-    </select>
-
-    <button id="applyBtn">Apply Settings</button>
+      <button type="button" onclick="applySettings()">Apply Settings</button>
+    </form>
   </div>
 
-  <script>
-    const ws = new WebSocket('ws://localhost:8765');
+<script>
+  function applySettings() {
+    const operator = document.getElementById('operatorSelect').value;
+    const sensitivity = document.getElementById('sensitivity').value;
 
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-    };
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-    };
-    ws.onerror = (e) => {
-      console.error("WebSocket error", e);
-    };
-
-    const applyBtn = document.getElementById('applyBtn');
-
-    applyBtn.addEventListener('click', () => {
-      const sensitivity = parseFloat(document.getElementById('sensitivity').value);
-      const operator = document.getElementById('operator').value;
-      const recoilEnabled = document.getElementById('toggleRecoil').value === "true";
-
-      const message = JSON.stringify({
-        sensitivity,
-        operator,
-        recoilEnabled
-      });
-
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(message);
-        alert('Settings sent to backend!');
-      } else {
-        alert('WebSocket not connected!');
-      }
-    });
-  </script>
+    alert(`Settings applied:\nOperator: ${operator}\nSensitivity: ${sensitivity}`);
+    // Here you can add code to send these settings to your backend via WebSocket or other means
+  }
+</script>
 </body>
 </html>
