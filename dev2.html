@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ Dev 2</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, #2e004f, #6a00a3);
+      font-family: 'Orbitron', sans-serif;
+      color: #caa0ff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 3rem;
+      text-shadow:
+        0 0 10px #ba55d3,
+        0 0 20px #ba55d3,
+        0 0 30px #a14fc8;
+      margin-bottom: 1rem;
+    }
+    label {
+      font-weight: 700;
+      margin-top: 1rem;
+      display: block;
+      color: #d1b3ff;
+    }
+    input[type="range"] {
+      width: 100%;
+      max-width: 320px;
+    }
+    output {
+      display: block;
+      text-align: center;
+      font-size: 1.2rem;
+      margin-top: 0.2rem;
+      color: #d1b3ff;
+      font-weight: 700;
+    }
+    button {
+      margin-top: 2rem;
+      background: linear-gradient(45deg, #a14fc8, #ba55d3);
+      border: none;
+      padding: 1rem 2rem;
+      border-radius: 50px;
+      color: #fff;
+      font-size: 1.2rem;
+      cursor: pointer;
+      box-shadow:
+        0 0 15px #ba55d3,
+        0 0 30px #a14fc8;
+      transition: box-shadow 0.3s ease, transform 0.3s ease;
+    }
+    button:hover {
+      box-shadow:
+        0 0 25px #d175ff,
+        0 0 50px #d175ff,
+        0 0 80px #e2a2ff;
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body>
+  <h1>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ Dev Control 2</h1>
+  <label for="sensitivityRange">Sensitivity</label>
+  <input type="range" id="sensitivityRange" min="0" max="100" step="0.1" value="10" />
+  <output id="sensitivityValue">10</output>
+
+  <button id="sendBtn">Send Sensitivity</button>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:8765');
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+    };
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+    ws.onerror = (e) => {
+      console.error("WebSocket error", e);
+    };
+
+    const sensitivityRange = document.getElementById('sensitivityRange');
+    const sensitivityValue = document.getElementById('sensitivityValue');
+    const sendBtn = document.getElementById('sendBtn');
+
+    sensitivityRange.addEventListener('input', () => {
+      sensitivityValue.textContent = sensitivityRange.value;
+    });
+
+    sendBtn.addEventListener('click', () => {
+      const sensitivity = parseFloat(sensitivityRange.value);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ sensitivity }));
+        alert('Sensitivity sent!');
+      } else {
+        alert('WebSocket not connected!');
+      }
+    });
+  </script>
+</body>
+</html>

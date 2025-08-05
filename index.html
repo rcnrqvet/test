@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap" rel="stylesheet" />
+<style>
+  body {
+    margin: 0; background: linear-gradient(135deg, #2e004f, #6a00a3);
+    font-family: 'Orbitron', sans-serif;
+    color: #caa0ff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  h1 {
+    font-size: 4rem;
+    letter-spacing: 0.2em;
+    margin: 1rem;
+    text-shadow: 0 0 10px #ba55d3;
+  }
+  .container {
+    background: rgba(50, 0, 80, 0.8);
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    box-shadow: 0 0 25px #a14fc8;
+    width: 320px;
+  }
+  label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: bold;
+  }
+  select, input[type=range] {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+  button {
+    margin-top: 2rem;
+    width: 100%;
+    background: linear-gradient(45deg, #a14fc8, #ba55d3);
+    border: none;
+    padding: 0.8rem;
+    color: white;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border-radius: 30px;
+    box-shadow: 0 0 15px #ba55d3;
+    transition: all 0.3s ease;
+  }
+  button:hover {
+    box-shadow: 0 0 30px #d175ff;
+  }
+  .status {
+    margin-top: 1rem;
+    text-align: center;
+    font-weight: bold;
+    color: #e2a2ff;
+  }
+</style>
+</head>
+<body>
+  <h1>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ</h1>
+  <div class="container">
+    <label for="operator-select">Select Operator</label>
+    <select id="operator-select">
+      <option value="ash">Ash</option>
+      <option value="thermite">Thermite</option>
+      <option value="sledge">Sledge</option>
+      <option value="hibana">Hibana</option>
+      <option value="buck">Buck</option>
+      <option value="iq">IQ</option>
+      <option value="finka">Finka</option>
+      <option value="zofia">Zofia</option>
+    </select>
+
+    <label for="fire-rate">Fire Rate Delay (ms)</label>
+    <input type="range" id="fire-rate" min="1" max="100" value="10" />
+
+    <label for="recoil-x">Recoil X</label>
+    <input type="range" id="recoil-x" min="-30" max="30" value="0" />
+
+    <label for="recoil-y">Recoil Y</label>
+    <input type="range" id="recoil-y" min="-30" max="30" value="0" />
+
+    <label for="opacity">Crosshair Opacity</label>
+    <input type="range" id="opacity" min="0" max="1" step="0.05" value="1" />
+
+    <label for="size">Crosshair Size (%)</label>
+    <input type="range" id="size" min="50" max="150" value="100" />
+
+    <button id="apply-btn">Apply Settings</button>
+
+    <div class="status" id="status">Disconnected</div>
+  </div>
+
+  <script>
+    const ws = new WebSocket("ws://localhost:8765");
+    const statusText = document.getElementById("status");
+    const operatorSelect = document.getElementById("operator-select");
+    const fireRate = document.getElementById("fire-rate");
+    const recoilX = document.getElementById("recoil-x");
+    const recoilY = document.getElementById("recoil-y");
+    const opacity = document.getElementById("opacity");
+    const size = document.getElementById("size");
+    const applyBtn = document.getElementById("apply-btn");
+
+    // Preset recoil data per operator
+    const operatorData = {
+      ash: { fireDelay: 10, x: 0, y: -10, reticle: "ash.png" },
+      thermite: { fireDelay: 15, x: 1, y: -12, reticle: "thermite.png" },
+      sledge: { fireDelay: 12, x: -1, y: -9, reticle: "sledge.png" },
+      hibana: { fireDelay: 9, x: 2, y: -11, reticle: "hibana.png" },
+      buck: { fireDelay: 11, x: 0, y: -8, reticle: "buck.png" },
+      iq: { fireDelay: 13, x: -2, y: -10, reticle: "iq.png" },
+      finka: { fireDelay: 10, x: 1, y: -9, reticle: "finka.png" },
+      zofia: { fireDelay: 14, x: 0, y: -12, reticle: "zofia.png" }
+    };
+
+    ws.onopen = () => {
+      statusText.textContent = "Connected";
+      applySettings();
+    };
+
+    ws.onclose = () => {
+      statusText.textContent = "Disconnected";
+    };
+
+    ws.onerror = () => {
+      statusText.textContent = "Error";
+    };
+
+    ws.onmessage = (event) => {
+      console.log("Received:", event.data);
+    };
+
+    function applySettings() {
+      const op = operatorSelect.value;
+      const data = operatorData[op];
+      let fireDelayMs = fireRate.value;
+      let recoilXVal = recoilX.value;
+      let recoilYVal = recoilY.value;
+      let opac = parseFloat(opacity.value);
+      let sz = parseFloat(size.value);
+
+      // Use custom recoil values if user changed them manually
+      if (fireRate.changed || recoilX.changed || recoilY.changed) {
+        fireDelayMs = fireRate.value;
+        recoilXVal = recoilX.value;
+        recoilYVal = recoilY.value;
+      } else {
+        // Use preset values for operator
+        fireDelayMs = data.fireDelay;
+        recoilXVal = data.x;
+        recoilYVal = data.y;
+      }
+
+      // Send recoil and fire delay as seconds (convert ms to seconds)
+      ws.send(`${fireDelayMs / 1000},${recoilXVal},${recoilYVal}`);
+      // Send overlay update command
+      ws.send(`>${opac},0,${sz},${data.reticle}`);
+
+      statusText.textContent = `Settings applied for ${op}`;
+    }
+
+    operatorSelect.addEventListener("change", applySettings);
+    fireRate.addEventListener("input", () => { fireRate.changed = true; applySettings(); });
+    recoilX.addEventListener("input", () => { recoilX.changed = true; applySettings(); });
+    recoilY.addEventListener("input", () => { recoilY.changed = true; applySettings(); });
+    opacity.addEventListener("input", applySettings);
+    size.addEventListener("input", applySettings);
+    applyBtn.addEventListener("click", applySettings);
+  </script>
+</body>
+</html>
