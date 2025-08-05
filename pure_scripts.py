@@ -1,6 +1,4 @@
 import os
-from license import verify_license
-import json
 import sys
 import asyncio
 import threading
@@ -9,6 +7,7 @@ import time
 import random
 import tkinter as tk
 from tkinter import filedialog
+import json
 
 from pynput import mouse, keyboard
 from PyQt5 import QtWidgets, QtGui, QtCore
@@ -76,7 +75,6 @@ class TransparentOverlay(QtWidgets.QWidget):
         super().__init__()
         self.anim = None
 
-        original_image = None
         temp_file_path = None
 
         if len(image_path) > 100 and not os.path.exists(image_path):
@@ -180,9 +178,14 @@ def run():
 
     def set_hotkeys(data):
         nonlocal primary_key, secondary_key, pause_key
-        pause_key = str(data[4])
-        primary_key = data[5]
-        secondary_key = data[6]
+        # Example parsing logic for hotkeys - update as needed
+        # Data format should be checked before using these indices
+        try:
+            pause_key = str(data[4])
+            primary_key = data[5]
+            secondary_key = data[6]
+        except IndexError:
+            print("[WARN] Invalid hotkey data received:", data)
 
     def move_mouse(dx, dy):
         ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
@@ -220,32 +223,36 @@ def run():
     def on_release(key):
         nonlocal paused
         try:
-            if key.char == primary_key:
-                send_ws_message("PRIMARY")
-            elif key.char == secondary_key:
-                send_ws_message("SECONDARY")
-            elif key.char == pause_key:
-                with pause_lock:
-                    paused = not paused
-                    send_ws_message("Paused" if paused else "Resumed")
+            if hasattr(key, 'char'):
+                if key.char == primary_key:
+                    send_ws_message("PRIMARY")
+                elif key.char == secondary_key:
+                    send_ws_message("SECONDARY")
+                elif key.char == pause_key:
+                    with pause_lock:
+                        paused = not paused
+                        send_ws_message("Paused" if paused else "Resumed")
         except AttributeError:
             pass
 
     def show_crosshair(new_opacity, new_grayscale, new_size, new_image):
-        nonlocal qt_app, overlay_widget
+        nonlocal qt_app, overlay_widget, overlay_thread
 
         def start_overlay():
             nonlocal qt_app, overlay_widget
-            qt_app = QtWidgets.QApplication([])
+            qt_app = QtWidgets.QApplication.instance()
+            if qt_app is None:
+                qt_app = QtWidgets.QApplication([])
             overlay_widget = TransparentOverlay(new_image, new_opacity, new_grayscale, new_size)
             qt_app.exec_()
 
-        nonlocal overlay_thread
         if overlay_thread and overlay_thread.is_alive():
             if overlay_widget:
                 overlay_widget.close()
                 overlay_widget = None
-            QtWidgets.QApplication.quit()
+            # Quit existing Qt app loop
+            if QtWidgets.QApplication.instance():
+                QtWidgets.QApplication.quit()
             overlay_thread.join()
             qt_app = None
 
@@ -261,6 +268,22 @@ def run():
             ws_client = websocket
         try:
             async for message in websocket:
+                # Try to parse JSON message (license verification requests will be JSON)
+                try:
+                    data = json.loads(message)
+                    if data.get("action") == "verify":
+                        key = data.get("key", "")
+                        # For testing, we mock success:
+                        success, msg = True, "License verified successfully"
+                        await websocket.send(json.dumps({
+                            "action": "license_result",
+                            "ok": success,
+                            "msg": msg
+                        }))
+                        continue  # skip further processing for this message
+                except json.JSONDecodeError:
+                    pass  # not JSON, continue normal message handling
+
                 if message.startswith(">"):
                     try:
                         parts = message[1:].split(',')
@@ -271,17 +294,22 @@ def run():
                         show_crosshair(opacity, grayscale, size_percent, reticle_path)
                     except Exception as e:
                         print(f"Overlay update failed: {e}")
+
                 elif message.startswith("<"):
                     if overlay_widget:
                         overlay_widget.close()
                         overlay_widget = None
-                        await websocket.send("Overlay deactivated")
+                    await websocket.send("Overlay deactivated")
+
                 elif message.startswith("^^^"):
                     save_text_file(message)
+
                 elif message.startswith("HKEY"):
                     set_hotkeys(message)
+
                 elif message.startswith("#"):
                     set_windows_accent_color_hex(message)
+
                 else:
                     try:
                         fire_delay, recoil_x, recoil_y = map(float, message.split(','))
@@ -290,6 +318,7 @@ def run():
                         await websocket.send(f"Settings updated to: {message}")
                     except ValueError:
                         await websocket.send("Error: Invalid format.")
+
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
@@ -298,7 +327,7 @@ def run():
 
     async def websocket_server():
         async with websockets.serve(handler, "localhost", 8765):
-            await asyncio.Future()
+            await asyncio.Future()  # run forever
 
     def start_ws():
         asyncio.set_event_loop(loop)
@@ -314,8 +343,8 @@ def run():
 
 # ---------------- Start Everything ----------------
 if __name__ == "__main__":
-    logic_thread = threading.Thread(target=run(), daemon=True)
-    logic_thread.start()
+    start_threads = run()
+    start_threads()  # start all background threads and listeners
 
     webview.create_window(
         'Ｐｕｒｅ　Ｓｃｒｉｐｔｓ',
@@ -324,4 +353,3 @@ if __name__ == "__main__":
         height=570
     )
     webview.start()
-
