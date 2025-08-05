@@ -1,5 +1,3 @@
-# pure_scripts.py
-
 import os
 import sys
 import asyncio
@@ -7,6 +5,8 @@ import threading
 import ctypes
 import time
 import random
+import tkinter as tk
+from tkinter import filedialog
 
 from pynput import mouse, keyboard
 from PyQt5 import QtWidgets, QtGui, QtCore
@@ -15,22 +15,25 @@ import websockets
 import webview
 import base64
 import tempfile
+
 import winreg
 
-# Path to main UI
-the_url = "file://" + os.path.abspath("r6v4.html")
+# ---------------- Config ----------------
+the_url = "http://localhost:5500/dev.html"  # change if you host files locally
 
-# Helper functions for Windows accent color, file save, etc.
+# ---------------- File Save Function and COLOR setter ----------------
 def save_text_file(data):
-    import tkinter as tk
-    from tkinter import filedialog
     root = tk.Tk()
     root.withdraw()
-    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".txt",
+        initialfile="settings.txt",
+        filetypes=[("Text files", "*.txt")]
+    )
     if file_path:
-        with open(file_path, "w", encoding="utf-8") as f:
+        with open(file_path, 'w', encoding='utf-8') as f:
             f.write(data)
-        print(f"Saved: {file_path}")
+        print(f"Message saved to {file_path}")
     else:
         print("Save cancelled")
 
@@ -51,23 +54,29 @@ def hex_to_bgr(hex_color):
 def set_windows_accent_color_hex(hex_color):
     b, g, r = hex_to_bgr(hex_color)
     color_dword = (b << 16) | (g << 8) | r
+
     key_path = r"Software\Microsoft\Windows\DWM"
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, "AccentColor", 0, winreg.REG_DWORD, color_dword)
+
     key_path2 = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent"
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path2, 0, winreg.KEY_SET_VALUE) as key2:
             winreg.SetValueEx(key2, "AccentColorMenu", 0, winreg.REG_DWORD, color_dword)
     except FileNotFoundError:
         pass
+
     ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x1A, 0, "ImmersiveColorSet", 0x2, 500)
 
-# Transparent overlay using PyQt
+# ---------------- PyQt Overlay ----------------
 class TransparentOverlay(QtWidgets.QWidget):
     def __init__(self, image_path, opacity, grayscale, size_percent):
         super().__init__()
         self.anim = None
+
+        original_image = None
         temp_file_path = None
+
         if len(image_path) > 100 and not os.path.exists(image_path):
             try:
                 clean_b64 = ''.join(image_path.strip().splitlines()).replace('\r', '').replace('\n', '')
@@ -79,31 +88,34 @@ class TransparentOverlay(QtWidgets.QWidget):
                 temp_file_path = temp_file.name
                 image_path = temp_file_path
             except Exception as e:
-                print("[ERROR] base64 decode error:", e)
+                print("[ERROR] Failed to decode base64 image:", e)
 
-        pixmap = QtGui.QPixmap(image_path)
-        if pixmap.isNull():
-            raise ValueError("Failed to load image")
+        original_image = QtGui.QPixmap(image_path)
+        if original_image.isNull():
+            raise ValueError("Failed to load image.")
 
         if grayscale:
-            image = pixmap.toImage().convertToFormat(QtGui.QImage.Format_ARGB32)
-            pixmap = QtGui.QPixmap.fromImage(image)
+            image = original_image.toImage().convertToFormat(QtGui.QImage.Format_ARGB32)
+            original_image = QtGui.QPixmap.fromImage(image)
 
         self.opacity = max(0.0, min(opacity, 1.0))
 
         monitor = next((m for m in get_monitors() if m.is_primary), get_monitors()[0])
-        screen_x, screen_y, screen_w, screen_h = monitor.x, monitor.y, monitor.width, monitor.height
+        screen_x = monitor.x
+        screen_y = monitor.y
+        screen_w = monitor.width
+        screen_h = monitor.height
 
         if grayscale:
-            new_w = int(pixmap.width() * (size_percent / 100))
-            new_h = int(pixmap.height() * (size_percent / 100))
-            self.image = pixmap.scaled(new_w, new_h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            new_width = int(original_image.width() * (size_percent / 100))
+            new_height = int(original_image.height() * (size_percent / 100))
+            self.image = original_image.scaled(new_width, new_height, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             x = screen_w // 2 - self.image.width() // 2
             y = screen_h // 2 - self.image.height() // 2
             self.setGeometry(screen_x + x, screen_y + y, self.image.width(), self.image.height())
             self.setFixedSize(self.image.width(), self.image.height())
         else:
-            self.image = pixmap
+            self.image = original_image
             self.setGeometry(screen_x, screen_y, self.image.width(), self.image.height())
             self.setFixedSize(self.image.width(), self.image.height())
 
@@ -114,9 +126,11 @@ class TransparentOverlay(QtWidgets.QWidget):
             QtCore.Qt.Tool |
             QtCore.Qt.WindowTransparentForInput
         )
+
         self.setWindowOpacity(0.0)
         self.show()
         self.fade_in()
+
         if temp_file_path:
             QtCore.QTimer.singleShot(5000, lambda: os.remove(temp_file_path))
 
@@ -133,16 +147,16 @@ class TransparentOverlay(QtWidgets.QWidget):
         painter.setOpacity(1.0)
         painter.drawPixmap(0, 0, self.image)
 
-# Main logic
+# ---------------- Main Logic ----------------
 def run():
     fire_delay = 0.01
-    recoil_x = 0.0
-    recoil_y = 0.0
+    recoil_x = 0
+    recoil_y = 0
 
     opacity = 1.0
     grayscale = False
     size_percent = 100
-    reticle_path = "pure_crosshair.png"
+    reticle_path = "pure_default_reticle.png"
 
     primary_key = '1'
     secondary_key = '2'
@@ -170,7 +184,7 @@ def run():
 
     def move_mouse(dx, dy):
         ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
-
+    
     def recoil_loop():
         nonlocal paused
         while True:
@@ -187,7 +201,7 @@ def run():
         elif button == mouse.Button.right:
             right_held = pressed
             time.sleep(0.02)
-            send_ws_message("RIGHT_CLICK")
+            send_ws_message('RIGHT_CLICK')
         holding = left_held and right_held
 
     def send_ws_message(message):
@@ -199,7 +213,7 @@ def run():
             if ws_client:
                 await ws_client.send(message)
         except Exception as e:
-            print(f"WS send error: {e}")
+            print(f"WebSocket send error: {e}")
 
     def on_release(key):
         nonlocal paused
@@ -217,6 +231,7 @@ def run():
 
     def show_crosshair(new_opacity, new_grayscale, new_size, new_image):
         nonlocal qt_app, overlay_widget
+
         def start_overlay():
             nonlocal qt_app, overlay_widget
             qt_app = QtWidgets.QApplication([])
@@ -239,6 +254,7 @@ def run():
         nonlocal fire_delay, recoil_x, recoil_y, paused, ws_client
         nonlocal opacity, grayscale, size_percent, reticle_path
         nonlocal overlay_widget
+
         with ws_lock:
             ws_client = websocket
         try:
@@ -269,7 +285,7 @@ def run():
                         fire_delay, recoil_x, recoil_y = map(float, message.split(','))
                         with pause_lock:
                             paused = False
-                        await websocket.send(f"Settings updated: {message}")
+                        await websocket.send(f"Settings updated to: {message}")
                     except ValueError:
                         await websocket.send("Error: Invalid format.")
         except websockets.exceptions.ConnectionClosed:
@@ -294,12 +310,13 @@ def run():
 
     return start_threads
 
+# ---------------- Start Everything ----------------
 if __name__ == "__main__":
-    thread_func = run()
-    threading.Thread(target=thread_func, daemon=True).start()
+    logic_thread = threading.Thread(target=run(), daemon=True)
+    logic_thread.start()
 
     webview.create_window(
-        "Ｐｕｒｅ　Ｓｃｒｉｐｔｓ",
+        'Ｐｕｒｅ　Ｓｃｒｉｐｔｓ',
         the_url,
         width=960,
         height=570
