@@ -8,6 +8,8 @@ import random
 import tkinter as tk
 from tkinter import filedialog
 import json
+import subprocess
+import requests
 
 from pynput import mouse, keyboard
 from PyQt5 import QtWidgets, QtGui, QtCore
@@ -21,6 +23,7 @@ import winreg
 
 # ---------------- Config ----------------
 the_url = "http://localhost:5500/dev.html"  # change if you host files locally
+LICENSE_SERVER_URL = "http://localhost:5000/validate"
 
 # ---------------- File Save Function and COLOR setter ----------------
 def save_text_file(data):
@@ -68,6 +71,25 @@ def set_windows_accent_color_hex(hex_color):
         pass
 
     ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x1A, 0, "ImmersiveColorSet", 0x2, 500)
+
+# ---------------- Machine ID ----------------
+def get_machine_id():
+    try:
+        cmd = 'wmic csproduct get uuid'
+        output = subprocess.check_output(cmd, shell=True).decode()
+        return output.split('\n')[1].strip()
+    except Exception:
+        return "unknown"
+
+# ---------------- License Validation ----------------
+def validate_license_key(key):
+    machine_id = get_machine_id()
+    try:
+        response = requests.post(LICENSE_SERVER_URL, json={"key": key, "machine_id": machine_id}, timeout=5)
+        data = response.json()
+        return data['valid'], data.get('msg', '')
+    except Exception as e:
+        return False, f"Validation error: {e}"
 
 # ---------------- PyQt Overlay ----------------
 class TransparentOverlay(QtWidgets.QWidget):
@@ -147,12 +169,6 @@ class TransparentOverlay(QtWidgets.QWidget):
         painter.setOpacity(1.0)
         painter.drawPixmap(0, 0, self.image)
 
-# ---------------- Recoil patterns ----------------
-recoil_patterns = {
-    "Operator1": [(0, 2), (1, 3), (0, 1), (-1, 2)],
-    "Operator2": [(0, 1), (2, 2), (1, 1), (-1, 0)]
-}
-
 # ---------------- Main Logic ----------------
 def run():
     fire_delay = 0.01
@@ -173,6 +189,8 @@ def run():
     right_held = False
 
     paused = False
+    license_valid = False
+    license_message = ""
     pause_lock = threading.Lock()
     ws_client = None
     ws_lock = threading.Lock()
@@ -181,10 +199,6 @@ def run():
     qt_app = None
     overlay_widget = None
     overlay_thread = None
-
-    current_pattern = recoil_patterns.get("Operator1", [])
-    recoil_index = 0
-    sensitivity = 1.0
 
     def set_hotkeys(data):
         nonlocal primary_key, secondary_key, pause_key
@@ -197,15 +211,14 @@ def run():
 
     def move_mouse(dx, dy):
         ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
-
+    
     def recoil_loop():
-        nonlocal recoil_index
+        nonlocal paused, license_valid
         while True:
             with pause_lock:
-                if holding and not paused and current_pattern:
-                    dx, dy = current_pattern[recoil_index]
-                    move_mouse(dx * sensitivity, dy * sensitivity)
-                    recoil_index = (recoil_index + 1) % len(current_pattern)
+                if holding and not paused and license_valid:
+                    dx = recoil_x if random.random() < 0.5 else 0
+                    move_mouse(dx, recoil_y)
             time.sleep(fire_delay)
 
     def on_click(x, y, button, pressed):
@@ -271,27 +284,33 @@ def run():
         nonlocal fire_delay, recoil_x, recoil_y, paused, ws_client
         nonlocal opacity, grayscale, size_percent, reticle_path
         nonlocal overlay_widget
-        nonlocal current_pattern, recoil_index, sensitivity
+        nonlocal license_valid, license_message
 
         with ws_lock:
             ws_client = websocket
         try:
             async for message in websocket:
-                # Try to parse JSON message (license verification requests will be JSON)
+                # Try to parse JSON message for license verification
                 try:
                     data = json.loads(message)
                     if data.get("action") == "verify":
                         key = data.get("key", "")
-                        # For testing, we mock success:
-                        success, msg = True, "License verified successfully"
+                        valid, msg = validate_license_key(key)
+                        license_valid = valid
+                        license_message = msg
                         await websocket.send(json.dumps({
                             "action": "license_result",
-                            "ok": success,
+                            "ok": valid,
                             "msg": msg
                         }))
                         continue
                 except json.JSONDecodeError:
-                    pass
+                    pass  # not JSON, continue normal handling
+
+                # Block commands if license invalid
+                if not license_valid:
+                    await websocket.send("Error: License invalid or not verified.")
+                    continue
 
                 if message.startswith(">"):
                     try:
@@ -318,19 +337,6 @@ def run():
 
                 elif message.startswith("#"):
                     set_windows_accent_color_hex(message)
-
-                elif message.startswith("operator:"):
-                    op = message.split(":", 1)[1]
-                    current_pattern = recoil_patterns.get(op, [])
-                    recoil_index = 0
-                    await websocket.send(f"Operator changed to {op}")
-
-                elif message.startswith("sensitivity:"):
-                    try:
-                        sensitivity = float(message.split(":", 1)[1])
-                        await websocket.send(f"Sensitivity set to {sensitivity}")
-                    except ValueError:
-                        await websocket.send("Error: Invalid sensitivity value")
 
                 else:
                     try:
@@ -366,7 +372,7 @@ def run():
 # ---------------- Start Everything ----------------
 if __name__ == "__main__":
     start_threads = run()
-    start_threads()  # start background threads and listeners
+    start_threads()
 
     webview.create_window(
         'Ｐｕｒｅ　Ｓｃｒｉｐｔｓ',
