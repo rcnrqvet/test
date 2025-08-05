@@ -28,11 +28,60 @@
     user-select: none;
   }
 
+  #licenseSection {
+    background: rgba(64, 0, 96, 0.7);
+    border-radius: 15px;
+    padding: 1rem 2rem;
+    margin: 1rem;
+    width: 95%;
+    max-width: 520px;
+    box-shadow: 0 0 15px #a65cff;
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  #licenseInput {
+    flex-grow: 1;
+    padding: 0.5rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    background: #3a006b;
+    color: #d6b3ff;
+    box-shadow: inset 0 0 8px #8e00c2;
+  }
+
+  #verifyBtn {
+    padding: 0.5rem 1.5rem;
+    font-size: 1rem;
+    background: linear-gradient(45deg, #8e00c2, #b36aff);
+    border: none;
+    border-radius: 30px;
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 0 15px #b36aff;
+    transition: transform 0.2s ease;
+  }
+
+  #verifyBtn:hover:not(:disabled) {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px #c580ff;
+  }
+
+  #verifyBtn:disabled {
+    background: gray;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
   #main {
     background: rgba(64, 0, 96, 0.7);
     border-radius: 15px;
     padding: 2rem 3rem;
-    margin: 2rem;
+    margin: 1rem;
     width: 95%;
     max-width: 520px;
     box-shadow: 0 0 20px #a65cff;
@@ -46,7 +95,7 @@
     text-shadow: 0 0 5px #b77aff;
   }
 
-  select, input[type="range"], input[type="text"] {
+  select, input[type="range"] {
     width: 100%;
     margin-top: 0.5rem;
     background: #3a006b;
@@ -74,13 +123,13 @@
     transition: transform 0.2s ease;
   }
 
-  button:hover:enabled {
+  button:hover:not(:disabled) {
     transform: scale(1.05);
     box-shadow: 0 0 40px #c580ff;
   }
 
   button:disabled {
-    opacity: 0.5;
+    background: gray;
     cursor: not-allowed;
     box-shadow: none;
   }
@@ -98,15 +147,12 @@
 
 <header>Ｐｕｒｅ　Ｓｃｒｉｐｔｓ</header>
 
-<div id="main">
-
-  <!-- License Section -->
-  <label for="licenseInput">Enter License Key</label>
-  <input type="text" id="licenseInput" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" />
+<div id="licenseSection">
+  <input type="text" id="licenseInput" placeholder="Enter your license key here" />
   <button id="verifyBtn">Verify License</button>
-  <div id="licenseStatus" style="margin-top: 0.5rem; font-style: normal; color: #ff6666;"></div>
+</div>
 
-  <!-- Settings, initially disabled -->
+<div id="main">
   <label for="operatorSelect">Select Operator</label>
   <select id="operatorSelect" disabled>
     <option value="default">Default</option>
@@ -121,92 +167,98 @@
 
   <button id="applyBtn" disabled>Apply Settings</button>
 
-  <div id="status">Connecting to backend...</div>
+  <div id="status">Please verify your license key to use recoil control.</div>
 </div>
 
 <script>
   const ws = new WebSocket("ws://localhost:8765");
   const statusEl = document.getElementById("status");
-  const licenseInput = document.getElementById("licenseInput");
-  const verifyBtn = document.getElementById("verifyBtn");
-  const licenseStatus = document.getElementById("licenseStatus");
-
   const operatorSelect = document.getElementById("operatorSelect");
   const sensitivityRange = document.getElementById("sensitivityRange");
   const sensitivityValue = document.getElementById("sensitivityValue");
   const applyBtn = document.getElementById("applyBtn");
+  const licenseInput = document.getElementById("licenseInput");
+  const verifyBtn = document.getElementById("verifyBtn");
+
+  let licenseValid = false;
 
   sensitivityRange.addEventListener('input', () => {
     sensitivityValue.textContent = sensitivityRange.value;
   });
 
-  // Disable controls initially until license is verified
-  function setControlsEnabled(enabled) {
-    operatorSelect.disabled = !enabled;
-    sensitivityRange.disabled = !enabled;
-    applyBtn.disabled = !enabled;
-  }
-  setControlsEnabled(false);
-
   ws.onopen = () => {
-    statusEl.textContent = "Connected to backend.";
+    statusEl.textContent = "Connected to backend. Please verify your license key.";
   };
 
   ws.onclose = () => {
-    statusEl.textContent = "Disconnected. Please start backend.";
-    setControlsEnabled(false);
+    statusEl.textContent = "Disconnected from backend. Please start backend.";
+    disableControls();
   };
 
   ws.onerror = () => {
     statusEl.textContent = "Error connecting to backend.";
-    setControlsEnabled(false);
+    disableControls();
   };
 
   ws.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data);
-      if (msg.action === "license_result") {
-        if (msg.ok) {
-          licenseStatus.style.color = "#7cff7c";
-          licenseStatus.textContent = "License Verified! You may use the tool.";
-          setControlsEnabled(true);
-          verifyBtn.disabled = true;
-          licenseInput.disabled = true;
+      const data = JSON.parse(event.data);
+      if (data.action === "license_result") {
+        if (data.ok) {
+          licenseValid = true;
+          statusEl.textContent = "License verified! You can now use recoil control.";
+          enableControls();
         } else {
-          licenseStatus.style.color = "#ff6666";
-          licenseStatus.textContent = `License Invalid: ${msg.msg || "Unknown error"}`;
-          setControlsEnabled(false);
+          licenseValid = false;
+          statusEl.textContent = `License invalid: ${data.msg}`;
+          disableControls();
         }
       }
     } catch {
-      console.log("Received non-JSON message:", event.data);
+      // Not JSON, ignore or handle other message types
+      console.log("Received:", event.data);
     }
   };
+
+  function enableControls() {
+    operatorSelect.disabled = false;
+    sensitivityRange.disabled = false;
+    applyBtn.disabled = false;
+  }
+
+  function disableControls() {
+    operatorSelect.disabled = true;
+    sensitivityRange.disabled = true;
+    applyBtn.disabled = true;
+  }
 
   verifyBtn.onclick = () => {
     const key = licenseInput.value.trim();
-    if (!key) {
-      licenseStatus.style.color = "#ff6666";
-      licenseStatus.textContent = "Please enter a license key.";
+    if (key.length === 0) {
+      alert("Please enter a license key.");
       return;
     }
-    licenseStatus.style.color = "#d6b3ff";
-    licenseStatus.textContent = "Verifying license...";
-    ws.send(JSON.stringify({ action: "verify", key }));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "verify", key }));
+      statusEl.textContent = "Verifying license key...";
+    } else {
+      statusEl.textContent = "WebSocket not connected.";
+    }
   };
 
   applyBtn.onclick = () => {
+    if (!licenseValid) {
+      alert("You must verify your license key first.");
+      return;
+    }
     const operator = operatorSelect.value;
     const sensitivity = parseFloat(sensitivityRange.value);
 
     // Compose your recoil control message format
-    // Example: delay, recoilX, recoilY (dummy values here, adjust as backend expects)
-    // For demo, sensitivity is multiplied into recoilY for example
     let recoilX = 5 * sensitivity;
     let recoilY = 10 * sensitivity;
-    let fireDelay = 0.05; // example delay
+    let fireDelay = 0.05;
 
-    // Send data to backend, comma-separated
     const message = `${fireDelay},${recoilX},${recoilY}`;
     ws.send(message);
 
